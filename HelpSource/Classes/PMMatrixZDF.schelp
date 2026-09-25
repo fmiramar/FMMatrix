@@ -1,0 +1,103 @@
+class:: PMMatrixZDF
+summary:: Implicit same-sample phase-modulation network with a bounded fixed-point solver
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/FMMatrix
+
+description::
+Approximates the implicit network code::y[i] = amps[i] * sin(phase[i] + sum(M[i][j] * y[j])):: with simultaneous damped fixed-point iterations. Matrix rows are destinations and columns are sources. The conceptual source is the matrix architecture of sc3-plugins FM7, independently extended to implicit coupling; no FM7 code is reused.
+
+Every internal sample starts from the preceding internal sample's output. An iteration evaluates all destinations before replacing the guess vector. Damping blends the guess toward that result. Phase then advances using double-precision signed-frequency accumulation. Iteration count is bounded and no memory is allocated in the calculation loop. Cost is approximately code::iterations * N.squared * oversample:: plus filtering.
+
+The name describes the same-sample equation; a finite iteration budget does not guarantee an exact or converged solution. A sufficient contraction condition is that every row's absolute-depth sum multiplied by that destination's absolute amplitude is less than one. Outside that region the solver may settle on different branches or fail to converge. The last finite iterate is returned; no hidden Newton solver or feedback limiter is applied. See the installed benchmark report for measured residuals. Feedback guesses start at zero and examples fade in.
+
+With a zero matrix and full damping, output resembles a bank of link::Classes/SinOsc:: oscillators. Unlike SinOsc or the delayed link::Classes/PMMatrix:: network, this class solves a simultaneous coupling equation within each sample. Oversampling adds output-filter latency even though the equation itself has no inserted edge delay.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+One or more base frequencies in Hz. Negative values reverse phase. Array size determines operator/output count.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude. These values affect the implicit equation and its convergence; constant, control and audio rates are supported.
+
+argument:: modMatrix
+An exact code::N x N:: matrix of radians per unit source amplitude, defaulting to zero. Control-rate entries ramp over one block; audio-rate entries are read per sample.
+
+argument:: iterations
+Constant integer from 1 to 64. All requested iterations run at every internal sample. More iterations increase CPU and can reduce residual in a convergent network.
+
+argument:: damping
+Blend fraction greater than zero and at most one; default one. Constant values outside this range are rejected. Dynamic values are read per host sample and bounded to code::1e-6..1::, with non-finite input treated as zero before bounding. Small fractions converge more slowly but can improve some oscillating iterations.
+
+argument:: resetTrig
+Scalar or per-operator trigger. A nonpositive-to-positive edge loads resetPhase before the first internal substep. Previous output guesses are retained.
+
+argument:: resetPhase
+Scalar or per-operator radians, read on each trigger edge.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. FIR decimation adds 0, 15.5, 23.25 or 27.125 host samples of latency. Continuous inputs interpolate causally between preceding and current host values. Oversampling reduces aliasing in measured patches but does not ensure solver convergence.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds, scalar/control-rate. Zero disables additional lag. A positive time is the 63.2 percent response time and also smooths audio-rate coefficients.
+
+argument:: mul
+Output multiplier using standard multichannel behavior.
+
+argument:: add
+Output offset using standard multichannel behavior.
+
+returns::
+An Array of raw operator outputs after optional decimation.
+
+examples::
+code::
+(
+
+    // 2-operator implicit phase modulation with feedback
+    x = {
+        var ops = PMMatrixZDF.ar([220, 331], 0, [0.8, 0.7],
+            [[0.2, 0.4], [-0.3, 0.2]], iterations: 8, damping: 0.8, oversample: 2);
+        Splay.ar(ops) * 0.15 * Line.kr(0, 1, 0.05)
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // Implicit coupled oscillators
+    x = {
+        var lfo = SinOsc.kr(0.1).range(0.1, 0.5);
+        var modMatrix = [
+            [0.2, lfo],
+            [-0.4, 0.1]
+        ];
+        var ops = PMMatrixZDF.ar([100, 150], 0, [1, 0.9], modMatrix, iterations: 4, damping: 0.9, oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Dense coupled network with dynamic damping
+    x = {
+        var damp = MouseX.kr(0.1, 1.0);
+        var modMatrix = [
+            [0.3, 0.5, -0.2],
+            [-0.2, 0.3, 0.5],
+            [0.5, -0.2, 0.3]
+        ];
+        var ops = PMMatrixZDF.ar([200, 300, 400], 0, [0.8, 0.8, 0.8], modMatrix, iterations: 6, damping: damp, oversample: 2);
+        (ops[0] * 0.1 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::

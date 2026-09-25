@@ -1,0 +1,93 @@
+class:: FMMatrix
+summary:: Arbitrary-size sine-operator network with true linear frequency modulation
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/SinOsc
+
+description::
+Generates one output per sine operator with a dense matrix of linear frequency deviations. Rows are destinations and columns are sources: code::modMatrix[i][j]:: means operator code::j:: modulates operator code::i::. The conceptual source is the matrix architecture of sc3-plugins FM7; this independent implementation changes the modulation law to true linear FM.
+
+For each sample, code::y[i] = amps[i] * sin(phase[i])::. At 1x, phase advances by code::2pi * (freqs[i] + sum(M[i][j] * previous[j])) / SampleRate.ir:: after output. All operators use the same preceding output vector, including self-feedback and cyclic paths. Negative instantaneous frequency reverses phase; it is not clamped. Phase and matrix sums use double precision. Initial feedback history is zero. CPU cost grows with code::oversample * N.squared::; strong modulation can alias even with oversampling.
+
+Like audio-rate frequency control of link::Classes/SinOsc::, modulation changes phase accumulation. Unlike a simple SinOsc bank, FMMatrix contains its own one-sample synchronous network. link::Classes/PMMatrix:: instead adds modulation directly to output phase in radians.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+One or more base frequencies in Hz; negative values are valid. Array size fixes operator and output count.
+
+argument:: phases
+Initial radians, scalar or one value per operator. Sampled at construction only.
+
+argument:: amps
+Scalar amplitude or one value per operator. Scales both output and internal modulation contributions.
+
+argument:: modMatrix
+An exact code::N x N:: Array, with depths in Hz per unit source amplitude. Defaults to zero. Control entries ramp from the previous target to the new target across one block; audio entries are read sample by sample.
+
+argument:: resetTrig
+Scalar or per-operator trigger, at any signal rate. A nonpositive-to-positive edge resets phase before the current sample. Held positive values do not repeat; feedback history is retained.
+
+argument:: resetPhase
+Scalar or per-operator radians, sampled on reset edges.
+
+argument:: oversample
+Construction-time factor: code::1::, code::2::, code::4:: or code::8::. Filtered factors add 15.5, 23.25 or 27.125 host samples of latency, while internal feedback retains a full host-sample delay. Continuous inputs interpolate causally from preceding to current host values; resets occur at the first substep. The FIR filters attenuate the upper audio band. Oversampling reduces but does not eliminate aliasing; see link::Guides/FMMatrixUGens::.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds, scalar or control-rate. Positive values smooth all coefficients, including audio-rate entries. code::0:: disables additional lag. Time is the 63.2 percent response time, not Lag's 60 dB time. Frequency, amplitude and reset inputs are not smoothed.
+
+argument:: mul
+Output multiplier, using standard multichannel expansion.
+
+argument:: add
+Output offset, using standard multichannel expansion.
+
+returns::
+An Array of raw audio-rate operator outputs.
+
+examples::
+code::
+(
+
+    // 2-operator linear FM with one-way modulation
+    x = {
+        var ops = FMMatrix.ar([220, 330], 0, [1, 0.7], [[0, 500], [0, 0]]);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.05)) ! 2
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // 3-operator FM with dynamic feedback
+    x = {
+        var modMatrix = [
+            [0, MouseY.kr(0, 1000), 0],
+            [0, 0, MouseX.kr(0, 2000)],
+            [Line.kr(0, 800, 10), 0, 0] // cyclical modulation
+        ];
+        var ops = FMMatrix.ar([100, 200, 300], 0, [1, 1, 1], modMatrix, oversample: 2);
+        (ops[0] * 0.1 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Chaotic FM sweep using audio-rate modulation
+    x = {
+        var sweep = LFSaw.ar(0.1).range(0, 1000);
+        var modMatrix = [
+            [sweep * 0.1, sweep],
+            [sweep * 1.5, sweep * 0.2]
+        ];
+        var ops = FMMatrix.ar([50, 100], 0, [1, 0.8], modMatrix, oversample: 4);
+        LeakDC.ar(ops[0] * 0.15 * Line.kr(0, 1, 0.5)) ! 2
+    }.play;
+)
+::

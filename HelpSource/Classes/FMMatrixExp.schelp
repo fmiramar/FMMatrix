@@ -1,0 +1,92 @@
+class:: FMMatrixExp
+summary:: Exponential frequency-modulation matrix with octave-valued depths
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/FMMatrix, Classes/PMMatrix
+
+description::
+Extends the independent FM7-inspired matrix architecture with exponential FM: code::effectiveFreq[i] = freqs[i] * 2.pow(sum(M[i][j] * previous[j]))::. Rows are destinations and columns are sources. Output is amplitude times the sine of the double-precision carrier phase; that phase advances using effective frequency after output. Every edge reads the complete preceding network state, preserving one host sample of delay at all oversampling factors.
+
+Negative base frequencies remain negative and a zero base stays zero. For numerical safety, the summed octave exponent is bounded to -128 through +128 before exponentiation. This is an implementation bound, not a suggested musical range. Modulation can shift average pitch and generate aliased sidebands. Dense cost grows as code::oversample * N.squared::. Initial feedback/filter state is zero.
+
+This resembles driving link::Classes/SinOsc:: frequency with an octave-to-ratio conversion, but adds an internal synchronous network. Unlike link::Classes/FMMatrix::, depths represent octaves, not Hz; unlike link::Classes/PMMatrix::, they do not directly offset output phase.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or per-operator base frequencies in Hz; size fixes operator count. Signed and audio-rate values are supported.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude, affecting output and internal modulation.
+
+argument:: modMatrix
+Exact NxN matrix in octaves per unit source amplitude, default zero. Divide semitone depths by 12. Control entries ramp over one block; audio entries are read per sample.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive phase-reset trigger. Feedback history is retained.
+
+argument:: resetPhase
+Scalar or per-operator reset radians, read on trigger edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. FIR decimation adds 0, 15.5, 23.25 or 27.125 host samples of latency. Interpolation and filtering follow the project guide; alias reduction is patch-dependent.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds, scalar/control-rate. Zero disables extra lag; positive times mean a 63.2 percent response and also affect audio-rate depths.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of raw operator outputs.
+
+examples::
+code::
+(
+
+    // 2-operator exponential FM with constant depth
+    x = {
+        var ops = FMMatrixExp.ar([110, 73], 0, [1, 0.7], [[0, 0.8], [0, 0]], oversample: 2);
+        (ops[0] * 0.12 * Line.kr(0, 1, 0.05)) ! 2
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // Deep exponential FM droning
+    x = {
+        var modMatrix = [
+            [SinOsc.kr(0.1).range(0, 0.5), 1.2],
+            [0.5, SinOsc.kr(0.15).range(0, 0.3)]
+        ];
+        var ops = FMMatrixExp.ar([55, 110], 0, [1, 1], modMatrix, oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.5)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Cross-modulated exponential bells
+    x = {
+        var env = EnvGen.ar(Env.perc(0.01, 2), Dust.kr(1));
+        var modMatrix = [
+            [0, env * 2],
+            [env * 1.5, 0]
+        ];
+        var ops = FMMatrixExp.ar([440, 880], 0, [1, 0.5], modMatrix, oversample: 4);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.05)) ! 2
+    }.play;
+)
+::

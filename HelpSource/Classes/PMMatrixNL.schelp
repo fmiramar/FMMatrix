@@ -1,0 +1,109 @@
+class:: PMMatrixNL
+summary:: PM matrix with a nonlinear function on each destination sum
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/SinOsc
+
+description::
+Adds one nonlinear transform per destination to the independent FM7-inspired dense PM architecture. The equation is code::y[i] = amps[i] * sin(phase[i] + g[i](sum(M[i][j] * previous[j])))::. The function acts on the complete summed modulation, before addition to carrier phase; it is not applied per edge, to the carrier frequency, or as output distortion. All edges retain one host sample of delay at every oversampling factor. The function's input and output are interpreted as radians.
+
+The implementation performs N nonlinear evaluations per internal sample instead of NxN per-edge evaluations. Shape 0 reproduces ordinary PMMatrix. Fold, wrap and sign have discontinuities or corners, while squaring can greatly increase modulation. Oversampling reduces some aliasing but does not guarantee a band-limited network. Initial feedback/filter state is zero, and there is no normal-range amplitude or feedback limiter.
+
+This resembles applying a waveshaping function to link::Classes/SinOsc::'s phase-modulation signal. The difference is the shared synchronous network and an explicit per-destination transform, independent of the sine carrier shape.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or per-operator signed base frequencies in Hz, including audio rate. Size fixes N.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude, affecting output and outgoing modulation.
+
+argument:: modMatrix
+Exact NxN matrix with destination rows and source columns; default zero. Coefficients scale source amplitudes into radians before the destination transform. Control entries ramp over a block; audio entries are read per sample.
+
+argument:: shapes
+Scalar or N constant integers selecting functions:
+table::
+## 0 || linear: x
+## 1 || tanh(x)
+## 2 || soft clip: x / (1 + abs(x))
+## 3 || triangular fold into [-1, 1], period 4, identity on [-1, 1]
+## 4 || wrap into [-1, 1), period 2
+## 5 || abs(x)
+## 6 || x squared
+## 7 || sign(x), with sign(0) = 0
+::
+Shapes are fixed at construction. Non-finite intermediate results become zero for numerical safety.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive phase-reset trigger, retaining feedback history.
+
+argument:: resetPhase
+Scalar or per-operator radians read on reset edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. Output-filter latency is 0, 15.5, 23.25 or 27.125 host samples; internal edges retain one host sample of delay.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds at scalar/control rate. Zero disables lag; positive times mean a 63.2 percent response and also smooth audio-rate coefficients.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of N raw operator outputs.
+
+examples::
+code::
+(
+
+    // 2-operator phase modulation with folded nonlinear output
+    x = {
+        var ops = PMMatrixNL.ar([110, 221, 331], 0, [1, 0.7, 0.5],
+            [[0.2, 3, 0], [0, 0, 2], [0.8, 0, 0]], [1, 3, 2], oversample: 4);
+        Splay.ar(ops) * 0.12 * Line.kr(0, 1, 0.05)
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // Folded phase modulation
+    x = {
+        var modMatrix = [
+            [0, MouseX.kr(0, 10)],
+            [MouseY.kr(0, 10), 0]
+        ];
+        var ops = PMMatrixNL.ar([150, 250], 0, [1, 1], modMatrix,
+            types: [3, 3], // 3 is fold
+            params: [0.5, 0.5], oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Nonlinear feedback loop using tanh
+    x = {
+        var modMatrix = [
+            [Line.kr(0, 5, 10)] // Self-modulation
+        ];
+        var ops = PMMatrixNL.ar([110], 0, [1], modMatrix,
+            types: [1], // 1 is tanh
+            params: [1.0], oversample: 4);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::

@@ -1,0 +1,119 @@
+class:: PMMatrixIn
+summary:: Phase-modulation network with separate external source columns
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/PlayBuf, Classes/SinOsc
+
+description::
+Adds K external modulation sources to N internal sine oscillators in the independent FM7-inspired matrix architecture. The rectangular Nx(N+K) matrix has N destination rows. Its first N columns read delayed internal outputs; its last K columns read current external inputs. The equation is code::y[i] = amps[i] * sin(phase[i] + sum(M[i][j]*previous[j]) + sum(X[i][k]*external[k]))::. External audio is not assigned oscillator phase state, and only the N internal outputs are returned.
+
+Internal feedback retains one host sample of delay at every oversampling factor. External inputs use the current host sample at 1x, and causal interpolation from preceding to current host samples at higher factors. There is no additional external-input feedback delay, but the output decimator still adds latency. Initial internal feedback/filter state is zero. K=0 reduces to the dense PM network.
+
+This resembles feeding external audio into link::Classes/SinOsc::'s phase input while also connecting oscillators through delayed PM. It adds explicit rectangular routing, synchronous internal feedback and oversampling without pretending external signals are oscillator operators.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or per-operator signed base Hz. Size fixes N. Audio-rate supported.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude; affects output and internal outgoing modulation, not the external source level.
+
+argument:: modMatrix
+Exact Nx(N+K) matrix in radians per unit source amplitude. Default zero. Rows are destinations; internal columns precede external columns. Control entries ramp over a block; audio entries are sample-accurate.
+
+argument:: external
+Scalar or Array of external modulation signals, normally audio-rate. Its size fixes K at construction; an empty Array is valid.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive trigger, resetting phase before generation without clearing feedback.
+
+argument:: resetPhase
+Scalar or per-operator reset radians, read on trigger edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. Output-filter latency is 0, 15.5, 23.25 or 27.125 host samples. Strong modulation can still alias.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds at scalar/control rate. Zero disables lag; positive values specify the 63.2 percent response time and also smooth audio-rate coefficients.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of N internal operator outputs; external sources are not appended.
+
+examples::
+code::
+(
+
+    Routine {
+        b = Buffer.readChannel(s, ExampleFiles.child, channels: [0]);
+        s.sync;
+    // Phase modulating internal operators with an external buffer
+        SynthDef(\matrixSamplePM, { |out=0, buf|
+            var source = PlayBuf.ar(1, buf, BufRateScale.kr(buf), loop: 1);
+            // var source = SoundIn.ar(0); // alternative live input
+            var ops = PMMatrixIn.ar([110, 221], 0, [1, 0.7],
+                [[0.1, 0.4, 3], [0.2, 0, 1.5]], [source], oversample: 2);
+            Out.ar(out, Splay.ar(ops) * 0.12 * Line.kr(0, 1, 0.05));
+        }).add;
+        s.sync;
+        x = Synth(\matrixSamplePM, [\buf, b]);
+    }.play;
+)
+::
+code::
+(
+x.free;
+b.free;
+)
+::
+
+
+code::
+(
+
+    Routine {
+        b = Buffer.readChannel(s, ExampleFiles.child, channels: [0]);
+        s.sync;
+        // Modulating internal operators with external audio
+        x = {
+            // var ext = SoundIn.ar(0); // Alternative for live input
+            var ext = PlayBuf.ar(1, b.bufnum, loop: 1);
+            var modMatrix = [
+                [0, 0, MouseX.kr(0, 4)],
+                [0, 0, MouseY.kr(0, 4)]
+            ];
+            var ops = PMMatrixIn.ar([220, 330], 0, [1, 0.8], modMatrix, [ext], oversample: 2);
+            Splay.ar(ops) * 0.15 * Line.kr(0, 1, 0.1)
+        }.play;
+    }.play;
+)
+::
+
+code::
+(
+
+    Routine {
+        b = Buffer.readChannel(s, ExampleFiles.child, channels: [0]);
+        s.sync;
+        // External audio as carrier phase-modulated by an internal operator
+        x = {
+            var ext = PlayBuf.ar(1, b.bufnum, loop: 1);
+            var modMatrix = [
+                [1.5, 2.0] // External input modulates the internal operator
+            ];
+            var ops = PMMatrixIn.ar([100], 0, [1], modMatrix, [ext], oversample: 2);
+            (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+        }.play;
+    }.play;
+)
+::

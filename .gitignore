@@ -1,0 +1,6 @@
+build/
+build-*/
+stage/
+dist/
+.DS_Store
+gif-generation/

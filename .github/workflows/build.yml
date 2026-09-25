@@ -1,0 +1,94 @@
+name: Build and verify
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Debug]
+        target:
+          - {runner: ubuntu-24.04, platform: linux, arch: x64, cmake_arch: ""}
+          - {runner: macos-15-intel, platform: macos, arch: x64, cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"}
+          - {runner: macos-15, platform: macos, arch: arm64, cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"}
+          - {runner: windows-2022, platform: windows, arch: x64, cmake_arch: "-A x64"}
+    runs-on: ${{ matrix.target.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: supercollider/supercollider
+          ref: Version-3.14.1
+          path: sdk
+          submodules: recursive
+      - name: Configure explicit target
+        shell: bash
+        run: >-
+          cmake -S . -B build -DSC_PATH="$PWD/sdk"
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DSTRICT=ON
+          -DSCSYNTH=ON -DSUPERNOVA=ON ${{ matrix.target.cmake_arch }}
+      - run: cmake --build build --config ${{ matrix.config }} --parallel 2
+      - run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+      - name: Stage
+        if: matrix.config == 'Release'
+        run: cmake --install build --config Release --prefix stage/Extensions
+      - name: Package
+        if: matrix.config == 'Release'
+        env:
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: >-
+          python tools/package.py --stage stage --output dist --owner "$RELEASE_OWNER"
+          --version 0.1.0 --platform ${{ matrix.target.platform }} --architecture ${{ matrix.target.arch }}
+      - uses: actions/upload-artifact@v4
+        if: matrix.config == 'Release'
+        with:
+          name: ${{ github.repository_owner }}-FMMatrixUGens-0.1.0-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*
+          if-no-files-found: error
+  sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: supercollider/supercollider
+          ref: Version-3.14.1
+          path: sdk
+      - run: cmake -S . -B build -DSC_PATH="$PWD/sdk" -DSCSYNTH=OFF -DFM_MATRIX_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --parallel 2
+      - run: ctest --test-dir build --output-on-failure
+  language-and-server:
+    runs-on: ubuntu-24.04
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y supercollider-language supercollider-server supercollider-supernova jackd2
+      - name: Fetch matching runtime SDK
+        shell: bash
+        run: |
+          sc_version=$(scsynth -v | awk '{print $2}')
+          git clone --depth 1 --branch "Version-${sc_version}" https://github.com/supercollider/supercollider.git sdk
+          git -C sdk submodule update --init external_libraries/nova-tt
+      - run: cmake -S . -B build -DSC_PATH="$PWD/sdk" -DCMAKE_BUILD_TYPE=Release -DSCSYNTH=ON -DSUPERNOVA=ON
+      - run: cmake --build build --parallel 2
+      - run: cmake --install build --prefix "$HOME/.local/share/SuperCollider/Extensions"
+      - name: Start isolated dummy audio device
+        run: jackd -r -d dummy -r 48000 -p 512 > build/jack.log 2>&1 &
+      - name: Language, NRT, help, scsynth and Supernova checks
+        run: python3 tools/run_sc_tests.py --live --supernova
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ github.repository_owner }}-FMMatrixUGens-test-logs
+          path: build/test-logs/*

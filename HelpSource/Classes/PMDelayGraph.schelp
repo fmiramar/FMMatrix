@@ -1,0 +1,105 @@
+class:: PMDelayGraph
+summary:: Sparse PM network with independently delayed modulation edges
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMGraph, Classes/PMMatrix, Classes/DelayL
+
+description::
+Extends the independent FM7-inspired sparse PM network with a delay time for each edge: code::y[i,n] = amps[i,n] * sin(phase[i,n] + sum(depth[e,n] * y[source[e],n-delay[e,n]]))::, summed over edges whose destination is i. Delays are specified in seconds and evaluated at the internal oversampled rate. Adjacent history samples are linearly interpolated. All edges read history before any current output is written, including self-feedback and duplicate edges.
+
+One ring is allocated per source operator, not per edge. Memory for delay history is approximately code::8 * N * (ceil(maxDelay * sampleRate * oversample) + 1):: bytes, in addition to operator/filter state. Raise the server real-time memory pool for large networks or long delays. The minimum delay is one host sample at every factor; zero or negative times select that minimum. This UGen never solves instantaneous feedback. Delay modulation can change pitch and produce discontinuities; times are not automatically smoothed. Empty rings cause a warmup interval before longer connections become audible. Start with short delays and a fade-in.
+
+This resembles connecting phase inputs through link::Classes/DelayL::, but integrates arbitrary sparse routing and shared per-source histories within one UGen. It is a delayed oscillator network, not a physical waveguide model or an acoustic equivalence claim.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or per-operator signed base Hz, including audio-rate signals. Size fixes N.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude, affecting output and outgoing delayed modulation.
+
+argument:: sources
+Array of E constant zero-based source indices in 0..N-1. Empty is valid.
+
+argument:: destinations
+Array of E constant destination indices in 0..N-1. Duplicate and self edges are valid.
+
+argument:: depths
+Scalar or E phase-modulation depths, radians per unit source output. Control targets ramp over a block; audio rate is supported.
+
+argument:: delays
+Scalar or E delay times in seconds, including audio rate. Values clamp to one host sample through maxDelay. Fractional samples use linear interpolation; smoothing is the caller's responsibility.
+
+argument:: maxDelay
+Finite positive construction-time allocation limit in seconds, default 0.05. Values shorter than one host sample allocate that minimum instead. Oversampling multiplies memory use; allocation failure produces silence.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive phase-reset trigger. Delay histories are retained.
+
+argument:: resetPhase
+Scalar or per-operator radians read on reset edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. Delay histories run at this multiple of sample rate. FIR output latency is additionally 0, 15.5, 23.25 or 27.125 host samples.
+
+argument:: smooth
+Additional depth-only one-pole time in seconds at scalar/control rate; it does not smooth delay times. Zero disables lag; positive values mean 63.2 percent response time and include audio-rate depths.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of N raw operator outputs.
+
+examples::
+code::
+(
+
+    // 4-operator sparse phase modulation with delayed edges
+    x = {
+        var ops = PMDelayGraph.ar([110, 173, 227, 293], 0, 0.7,
+            [0, 1, 2, 3], [1, 2, 3, 0], 1.3,
+            [0.002, 0.003, 0.005, 0.007], maxDelay: 0.02, oversample: 2);
+        Splay.ar(ops) * 0.1 * Line.kr(0, 1, 0.05)
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // Feedback PM with long, dynamic delays
+    x = {
+        var d1 = MouseX.kr(0.001, 0.05);
+        var d2 = MouseY.kr(0.001, 0.05);
+        var ops = PMDelayGraph.ar([200, 300], 0, [1, 1],
+            [0, 1], [1, 0], [1.5, 1.5], [d1, d2], maxDelay: 0.1, oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // PM waveguide-like physical modeling experiment
+    x = {
+        // PM waveguide-like physical modeling experiment
+        var exciter = EnvGen.ar(Env.perc(0.001, 0.05), Impulse.kr(3));
+        var freqs = [100, 130];
+        // Short delays to create a resonant structure
+        var ops = PMDelayGraph.ar(freqs, 0, [exciter, 1],
+            [0, 1], [1, 0], [2.0, 2.0], [0.01, 0.015], maxDelay: 0.05, oversample: 4);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::

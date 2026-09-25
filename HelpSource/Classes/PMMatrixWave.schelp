@@ -1,0 +1,117 @@
+class:: PMMatrixWave
+summary:: Arbitrary-size PM network of interpolated wavetable operators
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/Buffer, Classes/Osc
+
+description::
+Replaces the sine operators in the independent FM7-inspired PM matrix with user-supplied cyclic mono tables. The equation is code::y[i] = amps[i] * table[i](phase[i] + sum(M[i][j] * previous[j]))::. Phase and matrix depths are radians. Every internal edge reads the complete output vector from one host sample earlier, including when oversampling.
+
+Tables contain raw cycle samples, not the interleaved wavetable format used by Osc. Lookup wraps around the buffer and linearly interpolates adjacent samples, including across the last/first boundary. Use at least two mono frames. Missing, freed, stereo, fractional-number or out-of-range buffers produce silence for the affected operator; invalid indices never fall back to buffer zero. Global and local buffers are supported. Supernova uses the standard shared buffer lock while reading. Changing a buffer number is immediate and may click; crossfade separate networks for smooth table changes. Feedback and filter histories initially contain zero.
+
+This resembles link::Classes/Osc:: with phase modulation, but uses raw mono tables, double-precision phase, arbitrary-size internal routing and optional filtered oversampling. It is not automatically band-limited: discontinuous tables and strong modulation can alias. Table size, content and oversampling matter.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or per-operator signed base frequencies in Hz, including audio-rate values. Size fixes output count N.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude, affecting output and outgoing modulation. Audio-rate supported.
+
+argument:: modMatrix
+Exact NxN matrix, destination rows and source columns, in radians per unit source output. Default zero. Control-rate entries ramp over one block; audio-rate entries are read each sample.
+
+argument:: bufnums
+Scalar or N buffer numbers/Buffer objects, scalar or control-rate. Each buffer must contain a raw mono cycle; prepare sine tables with code::asWavetable: false::. Buffers may have different lengths.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive phase-reset trigger. Feedback history is retained.
+
+argument:: resetPhase
+Scalar or per-operator radians read on reset edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8. FIR output latency is 0, 15.5, 23.25 or 27.125 host samples. Internal edges retain one host sample of delay.
+
+argument:: smooth
+Additional matrix-only one-pole time in seconds at scalar/control rate. Zero disables lag; positive values specify the 63.2 percent response time, including for audio-rate coefficients.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of N raw operator outputs.
+
+examples::
+code::
+(
+
+    // 2-operator phase modulation using a custom sine wavetable
+    Routine {
+        b = Buffer.alloc(s, 2048, 1);
+        s.sync;
+        b.sine1([1, 0.3, 0.1], asWavetable: false);
+        s.sync;
+        x = {
+            var ops = PMMatrixWave.ar([110, 221], 0, [1, 0.6],
+                [[0, 1.2], [0.15, 0]], b, oversample: 2);
+            Splay.ar(ops) * 0.12 * Line.kr(0, 1, 0.05)
+        }.play;
+    }.play;
+)
+::
+code::
+(
+x.free;
+b.free;
+)
+::
+
+
+code::
+(
+
+    Routine {
+        b = Buffer.alloc(s, 1024, 1);
+        c = Buffer.alloc(s, 1024, 1);
+        s.sync;
+        b.sine1(1.0/[1, 2, 3, 4, 5, 6], asWavetable: false);
+        c.sine1(1.0/[1, 0, 3, 0, 5, 0], asWavetable: false);
+        s.sync;
+        x = {
+            var modMatrix = [
+                [0.5, MouseX.kr(0, 2)],
+                [MouseY.kr(0, 2), 0.5]
+            ];
+            var ops = PMMatrixWave.ar([100, 150], 0, [1, 1], modMatrix, [b.bufnum, c.bufnum], oversample: 2);
+            Splay.ar(ops) * 0.15 * Line.kr(0, 1, 0.1)
+        }.play;
+    }.play;
+)
+::
+
+code::
+(
+
+    Routine {
+        b = Buffer.alloc(s, 2048, 1);
+        s.sync;
+        // Sawtooth approximation
+        b.sine1(1.0/(1..10), asWavetable: false);
+        s.sync;
+        x = {
+            var modMatrix = [[MouseX.kr(0, 3)]]; // Self-modulation
+            var ops = PMMatrixWave.ar([110], 0, [1], modMatrix, [b.bufnum], oversample: 2);
+            (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+        }.play;
+    }.play;
+)
+::

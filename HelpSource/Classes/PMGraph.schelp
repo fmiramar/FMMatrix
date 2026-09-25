@@ -1,0 +1,99 @@
+class:: PMGraph
+summary:: Sparse arbitrary-size synchronous phase-modulation network
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/PMMatrix, Classes/PMMatrixZDF
+
+description::
+Computes the same delayed sine-operator equation as link::Classes/PMMatrix:: using a fixed list of directed edges. This independent extension of the sc3-plugins FM7 matrix concept makes networks with relatively few connections cost approximately code::N + E:: per internal sample, plus filtering, instead of scanning code::N.squared:: coefficients.
+
+Each edge adds code::depths[e] * previous[sources[e]]:: to the phase of code::destinations[e]::. All destinations read the complete previous network state; every edge retains one full host sample of delay even with oversampling. Self-edges and duplicate edges are valid, and duplicate contributions add in list order. To deactivate an edge, fade its depth to zero. Adding new endpoints requires another SynthDef. Initial feedback and filter histories are zero.
+
+With no edges this resembles a bank of link::Classes/SinOsc:: oscillators. It adds sample-delayed internal routing, initial/reset phases and the same oversampling and smoothing behavior as the dense family. Use PMMatrix when an arbitrary dense topology must morph; use PMGraph when endpoints are fixed and only a small fraction of possible edges is needed.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+Scalar or Array of base frequencies in Hz, including negative values. Size fixes operator/output count.
+
+argument:: phases
+Scalar or per-operator initial radians, sampled at construction.
+
+argument:: amps
+Scalar or per-operator amplitude, scaling output and outgoing modulation. Audio-rate supported.
+
+argument:: sources
+An Array of constant zero-based source indices in code::0..N-1::. Size determines edge count E; empty is valid.
+
+argument:: destinations
+An Array of E constant destination indices in code::0..N-1::. In dense notation this is the row; source is the column.
+
+argument:: depths
+Scalar or E values, in radians per unit source amplitude. Constant, control and audio rates are supported. Control targets ramp over one block.
+
+argument:: resetTrig
+Scalar or per-operator nonpositive-to-positive trigger. Resets phase before generation, retaining feedback history.
+
+argument:: resetPhase
+Scalar or per-operator radians sampled on trigger edges.
+
+argument:: oversample
+Constant 1, 2, 4 or 8, adding 0, 15.5, 23.25 or 27.125 host samples of output-filter latency. Edges retain one host sample of internal delay. Strong modulation can still alias.
+
+argument:: smooth
+Additional edge-depth one-pole time in seconds at scalar/control rate. Zero disables additional smoothing; positive values use a 63.2 percent response time and also smooth audio-rate depths.
+
+argument:: mul
+Output multiplier with standard multichannel behavior.
+
+argument:: add
+Output offset with standard multichannel behavior.
+
+returns::
+An Array of N raw operator outputs.
+
+examples::
+code::
+(
+
+    // 4-operator sparse phase modulation ring
+    x = {
+        var n = 16;
+        var ops = PMGraph.ar(Array.series(n, 110, 7), 0, 0.7,
+            (0..n-1), (1..n) % n, SinOsc.kr(0.2).range(0.1, 1.2), smooth: 0.02);
+        Splay.ar(ops) * 0.1 * Line.kr(0, 1, 0.05)
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // Circular chain of operators
+    x = {
+        var numOps = 8;
+        var freqs = Array.fill(numOps, { |i| 110 * (i + 1) });
+        var amps = Array.fill(numOps, { 1.0 });
+        var sources = Array.fill(numOps, { |i| i });
+        var dests = Array.fill(numOps, { |i| (i + 1) % numOps });
+        var depths = Array.fill(numOps, { SinOsc.kr(rrand(0.1, 0.5)).range(0, 1.5) });
+        var ops = PMGraph.ar(freqs, 0, amps, sources, dests, depths, oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Sparse network with dynamic routing via depth control
+    x = {
+        var env = LFNoise2.kr(1).range(0, 2);
+        var ops = PMGraph.ar([300, 400, 500], 0, [1, 1, 1],
+            [0, 1, 2], [1, 2, 0], [env, env * 1.5, env * 0.5], oversample: 4);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.1)) ! 2
+    }.play;
+)
+::

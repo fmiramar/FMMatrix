@@ -1,0 +1,65 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release]
+        target:
+          - {runner: ubuntu-24.04, platform: linux, arch: x64, cmake_arch: ""}
+          - {runner: macos-15-intel, platform: macos, arch: x64, cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"}
+          - {runner: macos-15, platform: macos, arch: arm64, cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"}
+          - {runner: windows-2022, platform: windows, arch: x64, cmake_arch: "-A x64"}
+    runs-on: ${{ matrix.target.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: supercollider/supercollider
+          ref: Version-3.14.1
+          path: sdk
+          submodules: recursive
+      - name: Configure explicit target
+        shell: bash
+        run: >-
+          cmake -S . -B build -DSC_PATH="$PWD/sdk"
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DSTRICT=ON
+          -DSCSYNTH=ON -DSUPERNOVA=ON ${{ matrix.target.cmake_arch }}
+      - run: cmake --build build --config ${{ matrix.config }} --parallel 2
+      - name: Stage
+        run: cmake --install build --config Release --prefix stage/Extensions
+      - name: Package
+        env:
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: >-
+          python tools/package.py --stage stage --output dist --owner "$RELEASE_OWNER"
+          --version ${{ github.ref_name }} --platform ${{ matrix.target.platform }} --architecture ${{ matrix.target.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target.platform }}-${{ matrix.target.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: package-*
+          merge-multiple: true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          fail_on_unmatched_files: true

@@ -1,0 +1,10 @@
+fp_mode,seed,ns_per_sample,final_output
+ieee,0,4.4453,0
+ieee,1e-100,7.34057,1e-100
+ieee,1e-310,41.99276,1e-310
+flush_to_zero,0,4.52396,0
+flush_to_zero,1e-100,7.58993,1e-100
+flush_to_zero,1e-310,4.44529,0
+flush_and_denormals_are_zero,0,4.44521,0
+flush_and_denormals_are_zero,1e-100,7.33389,1e-100
+flush_and_denormals_are_zero,1e-310,4.44535,0

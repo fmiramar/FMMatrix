@@ -1,0 +1,62 @@
+title:: FMMatrixUGens
+summary:: Arbitrary-size phase- and frequency-modulation networks
+categories:: Guides>UGens
+related:: Classes/SinOscFB, Classes/FM7, Classes/DelayN, Classes/SinOsc
+
+section:: UGen family
+
+link::Classes/PMMatrix:: is a sine-operator network with modulation in radians per unit source amplitude. Every destination reads the complete preceding output vector, including self-feedback and cycles.
+
+link::Classes/FMMatrix:: uses the same layout with depths in Hz per unit source amplitude. Modulation changes phase accumulation, including negative instantaneous frequency.
+
+link::Classes/PMMatrixZDF:: approximates an implicit same-sample PM equation using simultaneous damped fixed-point iterations. Its name does not guarantee convergence; strong coupling can remain nonconvergent at any supported iteration count.
+
+link::Classes/PMGraph:: implements delayed PM through fixed source/destination edge lists with dynamic depths. Its state and work scale with operators plus edges, making sparse networks up to hundreds of operators practical where equivalent dense networks are costly. See the measured dense/sparse comparison in the benchmark report.
+
+link::Classes/FMMatrixExp:: changes the FM law to exponential frequency scaling, with depths in octaves. Signed base frequencies retain their sign, and the summed exponent is numerically bounded to plus/minus 128 octaves.
+
+link::Classes/PMMatrixWave:: replaces sine lookup with linearly interpolated raw mono cycle buffers. Each operator can use a separate table; invalid buffers produce silence instead of reading another buffer.
+
+link::Classes/PMMatrixIn:: adds K external source columns after N internal columns in an Nx(N+K) matrix. Only internal oscillators have phase and delayed feedback state; external input is current, causally interpolated audio.
+
+link::Classes/PMDelayGraph:: adds fractional, independently controlled edge delays to the sparse network. It shares one history ring per source and clamps delays to a minimum of one host sample.
+
+link::Classes/PMMatrixNL:: transforms each destination's complete modulation sum using linear, tanh, softclip, fold, wrap, abs, square or sign functions before adding carrier phase. This requires N nonlinear evaluations instead of one per edge.
+
+Operator count is fixed by code::freqs.size:: at SynthDef construction, without a small hardcoded maximum. Every class returns an Array of raw operator outputs. A zero matrix resembles independent link::Classes/SinOsc:: oscillators; the matrix classes add internal network state, double phase accumulation, initial-phase semantics and optional filtered oversampling.
+
+section:: Matrix orientation and controls
+
+Rows are destinations and columns are sources: code::M[i][j]:: means source code::j:: modulates destination code::i::. Source amplitude affects both its audible output and modulation contribution. Output code::mul/add:: are applied afterward and do not affect the internal network.
+
+Frequencies, amplitudes, depths and reset controls accept audio-rate signals. Control-rate depths ramp from their previous target to the current target across a block. Optional code::smooth:: adds matrix-only one-pole lag, including on audio-rate depths; its time is the 63.2 percent response time. Initial phases are sampled at construction. Reset triggers act before sample generation and retain existing feedback history or solver guesses.
+
+section:: Oversampling and limits
+
+Factors 1, 2, 4 and 8 are fixed at construction. Continuous inputs interpolate causally from preceding host values toward current values across substeps. A cascade of symmetric 63-tap half-band FIR filters downsamples to the host rate. Latencies are 0, 15.5, 23.25 and 27.125 host samples respectively. The filters attenuate the upper audio band. PMMatrix and FMMatrix retain exactly one host sample of internal edge delay at every factor; ZDF instead uses the last internal output as its initial guess.
+
+Oversampling reduced folded-sideband energy in the documented PM/FM benchmarks, but arbitrary nonlinear feedback can still alias. Dense CPU cost grows with code::oversample * N.squared::, multiplied by the solver iteration budget for ZDF. Large dense networks can exceed real time. See the installed code::benchmarks/README.md:: and numeric CSV files.
+
+Large output arrays and downstream processing can also exhaust the server's interconnect buffers. Before booting a server for large networks, increase code::s.options.numWireBufs:: (for example to 1024); changing this option requires a server restart. The graph example defaults to 16 operators so it runs with ordinary server settings.
+
+All UGen state is allocated at construction; wavetable buffers are supplied by the caller. Non-finite signal inputs become zero; invalid table numbers instead select silence. Phase remains wrapped. Output beyond the finite float range is bounded to that representable range. Only extremely small double smoothing state below code::1e-300:: is flushed to zero. There is no normal-range amplitude or feedback limiter. Feedback and filter histories start at zero; use a short fade-in. Delayed graphs also warm up their initially empty histories. Their delay memory scales with N times maximum delay times internal sample rate, and may require a larger server real-time memory pool.
+
+section:: Matrix morph
+
+code::
+(
+
+    // Interpolate between multiple modulation topologies
+    x = {
+        var morph = SinOsc.kr(0.15).range(0, 1);
+        var ops = PMMatrix.ar([110, 220, 331], 0, [1, 0.7, 0.5],
+            [[morph * 0.3, morph * 2, 0], [0, 0, 1-morph], [morph * 0.5, 0, 0]],
+            oversample: 2, smooth: 0.02);
+        Splay.ar(ops) * 0.12 * Line.kr(0, 1, 0.05)
+    }.play;
+)
+::
+
+section:: Source and scope
+
+The conceptual source is the matrix architecture of sc3-plugins link::https://doc.sccode.org/Classes/FM7.html::. This independent experimental adaptation generalizes operator count and specifies synchronous and implicit feedback separately. FM7 is not required to use this extension.

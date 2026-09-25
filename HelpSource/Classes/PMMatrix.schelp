@@ -1,0 +1,97 @@
+class:: PMMatrix
+summary:: Construction-time arbitrary-size dense phase-modulation operator matrix
+categories:: UGens>Generators>Deterministic
+related:: Guides/FMMatrixUGens, Classes/FMMatrix, Classes/PMMatrixZDF
+
+description::
+Builds one multi-output sine-operator network whose count is inferred from code::freqs::. Matrix rows are destinations and columns are sources: code::modMatrix[i][j]:: means source operator code::j:: modulates destination operator code::i::. The conceptual source is sc3-plugins link::https://doc.sccode.org/Classes/FM7.html::; this implementation independently generalizes the matrix technique.
+
+For each sample, code::y[i] = amps[i] * sin(phase[i] + sum(M[i][j] * previous[j]))::. All operators read the same previous output vector before it is replaced, including self-feedback and cycles. Phase advances by code::2pi * freqs[i] / SampleRate.ir:: at 1x after generating the output. Phase state and modulation sums use double precision. Initial feedback history is zero; examples fade in briefly. CPU cost grows with code::oversample * N.squared::. Strong modulation can alias even with oversampling.
+
+With a zero matrix this is similar to a bank of link::Classes/SinOsc:: oscillators. It adds an internal sample-delayed modulation network and construction-time initial phases; it does not use SinOsc's fixed-point phase accumulator.
+
+classmethods::
+
+method:: ar
+
+argument:: freqs
+One or more frequencies in Hz. Negative frequencies reverse phase traversal. Array size fixes the output count.
+
+argument:: phases
+A scalar initial phase in radians or an Array with one value per operator, sampled at construction only.
+
+argument:: amps
+A scalar amplitude or one value per operator. Amplitude scales both the output and its contribution to other operators.
+
+argument:: modMatrix
+An exact code::N x N:: Array of rows in radians per unit source amplitude. Defaults to zero. Constant, control-rate and audio-rate entries are accepted. Control-rate entries ramp from the previous target to the new target over one block; audio-rate entries are read sample by sample.
+
+argument:: resetTrig
+Scalar or per-operator trigger, at any signal rate. A nonpositive-to-positive edge resets that operator before the current sample is generated. A held positive trigger does not repeat. Feedback history is retained.
+
+argument:: resetPhase
+Scalar or per-operator reset phase in radians, read on each trigger edge.
+
+argument:: oversample
+Construction-time factor: code::1::, code::2::, code::4:: or code::8::. Filtered factors use a 63-tap half-band FIR cascade and add 15.5, 23.25 or 27.125 host samples of latency. Internal feedback still spans one full host sample. Continuous inputs interpolate causally from their preceding host value to the current value across substeps. Reset is applied at the first substep. Filtering attenuates the top of the audio band; high-index patches can still alias. See link::Guides/FMMatrixUGens::.
+
+argument:: smooth
+Additional matrix-only one-pole smoothing time in seconds, scalar or control-rate. Positive values apply to every matrix entry, including audio-rate entries; code::0:: disables this additional lag. Time means reaching about 63.2 percent of the target, unlike Lag's 60 dB convention. Frequency, amplitude and reset controls are not smoothed.
+
+argument:: mul
+Output multiplier.
+
+argument:: add
+Value added to every output.
+
+returns::
+An Array of exactly code::freqs.size:: raw audio-rate operator outputs.
+
+examples::
+code::
+(
+
+    // 2-operator phase modulation with one-way routing
+    x = {
+        var ops = PMMatrix.ar([220, 330], 0, [1, 0.7], [[0.2, 1.5], [0, 0]]);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.05)) ! 2
+    }.play;
+)
+::
+
+
+code::
+(
+
+    // 4-operator phase modulation matrix (classic algorithm style)
+    x = {
+        // Envelopes and LFOs create evolving FM timbres
+        var env = EnvGen.ar(Env.perc(0.01, 1), Impulse.kr(2));
+        var lfo = SinOsc.kr(0.1).range(0.5, 3);
+        var modMatrix = [
+            [0, env * lfo, 0, 0],
+            [0, 0, env * 1.5, 0],
+            [0, 0, 0, env * 3],
+            [0, 0, 0, env * 0.5] // self feedback
+        ];
+        var ops = PMMatrix.ar([220, 220, 440, 110] + SinOsc.kr(0.05, 0, 2), 0, [1, 1, 1, 1], modMatrix, oversample: 2);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.05)) ! 2
+    }.play;
+)
+::
+
+code::
+(
+
+    // Pulsing feedback phase modulation
+    x = {
+        var mod = SinOsc.kr(0.2).range(0, pi/1.3);
+        var modMatrix = [
+            [mod * 0.5, mod],
+            [mod * 1.2, mod * 0.2]
+        ];
+        var ops = PMMatrix.ar([150, 75], 0, [1, 0.8], modMatrix, oversample: 4);
+        (ops[0] * 0.15 * Line.kr(0, 1, 0.5)) ! 2
+    }.play;
+)
+::
