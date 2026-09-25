@@ -1,4 +1,4 @@
-![FMMatrix Animation](gif-generation/PMGraph_Waveform_V4.gif)
+![FMMatrix Animation](docs/assets/PMGraph_Waveform_V4.gif)
 
 # FMMatrixUGens
 
