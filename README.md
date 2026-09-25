@@ -1,6 +1,6 @@
-# FMMatrixUGens
-
 ![FMMatrix Animation](gif-generation/PMGraph_Waveform_V4.gif)
+
+# FMMatrixUGens
 
 FMMatrixUGens is a standalone SuperCollider server-plugin family by fmiramar,
 developed with Codex, for phase- and frequency-modulation networks of arbitrary
