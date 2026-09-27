@@ -118,7 +118,7 @@ template <fmmatrix::Law law> void Matrix_next(PMMatrix* unit, int inNumSamples)
             engine.tickDelayedGraph(read, unit->graphIndices, unit->edges ? unit->graphIndices + unit->edges : nullptr,
                 unit->edges, matrixBegin, extraBegin, delays, SAMPLERATE);
         } else if constexpr (law == fmmatrix::Law::Wave || law == fmmatrix::Law::In || law == fmmatrix::Law::NL) {
-            auto evaluate = [&](std::size_t i, double phase, double sum) {
+            auto evaluate = [&]([[maybe_unused]] std::size_t i, double phase, double sum) {
                 if constexpr (law == fmmatrix::Law::Wave) return bufferWave(unit, IN0(extraBegin+i), phase+sum);
                 else if constexpr (law == fmmatrix::Law::NL)
                     return std::sin(fmmatrix::wrap(phase + fmmatrix::nonlinear(sum, static_cast<unsigned>(IN0(extraBegin+i)))));
