@@ -66,10 +66,3 @@ source columns; PMMatrixIn adds external columns, while graph classes use fixed
 endpoint lists. Outputs are always Arrays. Core controls are initial phases,
 amplitudes, resetTrig/resetPhase, oversample, smooth and output mul/add.
 Class help gives exact signatures and units; no published API has been renamed.
-
-## Next milestone
-
-The FM/PM implementation is ready for local use. Release administration remains:
-review/commit the source and benchmark data, run the configured hosted matrix,
-and publish only after platform results and release approval. SCShader is the
-next implementation project requested by the user.
